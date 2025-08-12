@@ -2,6 +2,7 @@
 import numpy as np
 import re, os, json
 from random import choice
+from utils.align_entities_with_tokens import align_with_tokens
 
 BERT_MAX_LEN = 512
 RANDOM_SEED = 2019
@@ -126,3 +127,4 @@ class data_generator:
                         sub_head_batch, sub_tail_batch = np.array(sub_head_batch), np.array(sub_tail_batch)
                         yield [tokens_batch, segments_batch, sub_heads_batch, sub_tails_batch, sub_head_batch, sub_tail_batch, obj_heads_batch, obj_tails_batch], None
                         tokens_batch, segments_batch, sub_heads_batch, sub_tails_batch, sub_head_batch, sub_tail_batch, obj_heads_batch, obj_tails_batch, = [], [], [], [], [], [], [], []
+
