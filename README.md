@@ -1,138 +1,68 @@
-## A Novel Cascade Binary Tagging Framework for Relational Triple Extraction
+# HBT - End-to-End Relation Extraction with BERT
 
-This repository contains the source code and dataset for the paper: **A Novel Cascade Binary Tagging Framework for Relational Triple Extraction**. [Zhepei Wei](https://weizhepei.com/), [Jianlin Su](https://spaces.ac.cn/), [Yue Wang](https://ils.unc.edu/~wangyue/), Yuan Tian and [Yi Chang](http://yichang-cs.com/). ACL 2020. [[pdf]](https://arxiv.org/abs/1909.03227)
+Projet d'extraction de relations à partir de textes basé sur un modèle BERT end-to-end.
+
+---
+
+## Structure du projet
+
+- **align_with_tokens.py** : fonctions pour aligner les entités avec les tokens produits par le tokenizer.
+- **data_loader.py** : chargement et préparation des données, génération des batches pour l’entraînement.
+- **model.py** : définition du modèle, fonctions d’entraînement et d’évaluation.
+- **run.py** : script principal pour lancer l’entraînement ou l’évaluation.
+- **utils.py** : fonctions utilitaires diverses (extraction d’entités, métriques, tokenizer).
+
+---
+
+## Installation & Prérequis
+
+- Python 3.6+
+- TensorFlow (compatible Keras)
+- NumPy
+- Autres librairies : argparse, etc.
+
+Installe les dépendances avec (si tu as un `requirements.txt`) :
 
 
-## Overview
+pip install -r requirements.txt
+Préparation des données
+Les datasets doivent être placés dans :
 
-At the core of the proposed CasRel framework is the fresh perspective that instead of treating relations as discrete labels on entity pairs, we actually model the relations as functions that map subjects to objects. More precisely, instead of learning relation classifiers f(s,o) -> r, we learn relation-specific taggers f_{r}(s) -> o, each of which recognizes the possible object(s) of a given subject under a specific relation. Under this framework, relational triple extraction is a two-step process: first we identify all possible subjects in a sentence; then for each subject, we apply relation-specific taggers to simultaneously identify all possible relations and the corresponding objects.
+kotlin
+Copier
+Modifier
+data/<dataset>/
+avec les fichiers suivants :
 
-![overview](https://weizhepei.com/images/HBT_overview.png)
+train_triples.json (données d'entraînement)
+
+dev_triples.json (données de validation)
+
+test_triples.json (données de test)
+
+rel2id.json (relations avec leur identifiant)
+
+Utilisation
+Entraînement
+
+python run.py --train=True --dataset=NYT
+Lance l'entraînement sur le dataset choisi (ici NYT_star).
+
+Évaluation / Test
+
+python run.py --train=False --dataset=NYT_star
+Charge les poids sauvegardés et évalue sur le jeu de test.
+
+Configuration
+Modèle BERT pré-entraîné utilisé : cased_L-12_H-768_A-12.
+
+Les poids et configurations BERT doivent être dans pretrained_bert_models/.
+
+GPU configuré automatiquement dans run.py.
+
+Résultats
+Les résultats des tests sont sauvegardés dans :
 
 
-## Requirements
 
-This repo was tested on Python 3.7 and Keras 2.2.4. The main requirements are:
-
-- tqdm
-- codecs
-- keras-bert = 0.80.0
-- tensorflow-gpu = 1.13.1
-
-## Datasets
-
-- [NYT](https://github.com/weizhepei/CasRel/tree/master/data/NYT)
-- [WebNLG](https://github.com/weizhepei/CasRel/tree/master/data/WebNLG)
-- [ACE04](https://github.com/weizhepei/CasRel/tree/master/data/ACE04)
-- [NYT10-HRL](https://github.com/weizhepei/CasRel/tree/master/data/NYT10-HRL)
-- [NYT11-HRL](https://github.com/weizhepei/CasRel/tree/master/data/NYT11-HRL)
-- [Wiki-KBP](https://github.com/weizhepei/CasRel/tree/master/data/Wiki-KBP)
-
-## Usage
-
-1. **Get pre-trained BERT model for Keras**
-
-   Download Google's pre-trained BERT model **[(`BERT-Base, Cased`)](https://storage.googleapis.com/bert_models/2018_10_18/cased_L-12_H-768_A-12.zip)**. Then decompress it under `pretrained_bert_models/`. More pre-trained models are available [here](https://github.com/google-research/bert#pre-trained-models).
-
-2. **Build dataset in the form of triples**
-
-   Take the NYT dataset for example: 
-
-   a) Switch to the corresponding directory and download the dataset 
-
-   ```shell
-   cd CasRel/data/NYT/raw_NYT
-   ```
-
-   b) Follow the [instructions]((https://github.com/weizhepei/CasRel/tree/master/data/NYT/raw_NYT)) at the same directory, and just run
-
-   ```shell
-   python generate.py
-   ```
-
-   c) Finally, build dataset in the form of triples
-
-   ```shell
-   cd CasRel/data/NYT
-   python build_data.py
-   ```
-
-   This will convert the raw numerical dataset into a proper format for our model and generate `train.json`, `test.json` and `val.json`(if not provided in the raw dataset, it will randomly sample 5% or 10% data from the `train.json` or `test.json` to create `val.json` as in line with previous works). Then split the test dataset by type and num for in-depth analysis on different scenarios of overlapping triples.
-
-3. **Specify the experimental settings**
-
-   By default, we use the following settings in [run.py](https://github.com/weizhepei/CasRel/blob/master/run.py):
-
-   ```json
-   {
-       "bert_model": "cased_L-12_H-768_A-12",
-       "max_len": 100,
-       "learning_rate": 1e-5,
-       "batch_size": 6,
-       "epoch_num": 100,
-   }
-   ```
-
-4. **Train and select the model**
-
-   Specify the running mode and dataset at the command line
-
-   ```shell
-   python run.py ---train=True --dataset=NYT
-   ```
-
-   The model weights that lead to the best performance on validation set will be stored in `saved_weights/DATASET/`.
-
-5. **Evaluate on the test set**
-
-   Specify the test dataset at the command line
-
-   ```shell
-   python run.py --dataset=NYT
-   ```
-
-   The extracted result will be saved in `results/DATASET/` with the following format:
-
-   ```json
-   {
-       "text": "Tim Brooke-Taylor was the star of Bananaman , an STV series first aired on 10/03/1983 and created by Steve Bright .",
-       "triple_list_gold": [
-           {
-               "subject": "Bananaman",
-               "relation": "starring",
-               "object": "Tim Brooke-Taylor"
-           },
-           {
-               "subject": "Bananaman",
-               "relation": "creator",
-               "object": "Steve Bright"
-           }
-       ],
-       "triple_list_pred": [
-           {
-               "subject": "Bananaman",
-               "relation": "starring",
-               "object": "Tim Brooke-Taylor"
-           },
-           {
-               "subject": "Bananaman",
-               "relation": "creator",
-               "object": "Steve Bright"
-           }
-       ],
-       "new": [],
-       "lack": []
-   }
-   ```
-   
-## Citation
-
-```
-@inproceedings{wei2020CasRel,
-  title={A Novel Cascade Binary Tagging Framework for Relational Triple Extraction},
-  author={Wei, Zhepei and Su, Jianlin and Wang, Yue and Tian, Yuan and Chang, Yi},
-  booktitle={Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics},
-  pages={1476--1488},
-  year={2020}
-}
-```
+results/<dataset>/test_result.json
