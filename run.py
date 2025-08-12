@@ -1,11 +1,16 @@
 #! -*- coding:utf-8 -*-
+import os
+import argparse
+
 from data_loader import data_generator, load_data
 from model import E2EModel, Evaluate
 from utils import extract_items, get_tokenizer, metric
-import os, argparse
+from utils.align_entities_with_tokens import align_entities_with_tokens
+
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+
 from keras import backend as K
-if(K.backend() == 'tensorflow'):
+if K.backend() == 'tensorflow':
     import tensorflow as tf
     from keras.backend.tensorflow_backend import set_session
     config = tf.ConfigProto()
@@ -14,8 +19,8 @@ if(K.backend() == 'tensorflow'):
 
 parser = argparse.ArgumentParser(description='Model Controller')
 parser.add_argument('--train', default=False, type=bool, help='to train the HBT model, python run.py --train=True')
-parser.add_argument('--dataset', default='NYT', type=str, help='specify the dataset from ["NYT","WebNLG","ACE04","NYT10-HRL","NYT11-HRL","Wiki-KBP"]
-')
+parser.add_argument('--dataset', default='NYT', type=str,
+                    help='specify the dataset from ["NYT","WebNLG","ACE04","NYT10-HRL","NYT11-HRL","Wiki-KBP"]')
 args = parser.parse_args()
 
 
@@ -29,36 +34,50 @@ if __name__ == '__main__':
     dataset = args.dataset
     train_path = 'data/' + dataset + '/train_triples.json'
     dev_path = 'data/' + dataset + '/dev_triples.json'
-    test_path = 'data/' + dataset + '/test_triples.json' # overall test
+    test_path = 'data/' + dataset + '/test_triples.json'  # overall test
     rel_dict_path = 'data/' + dataset + '/rel2id.json'
     save_weights_path = 'saved_weights/' + dataset + '/best_model.weights'
-    
+
     LR = 1e-5
     tokenizer = get_tokenizer(bert_vocab_path)
+
+    # Load data
     train_data, dev_data, test_data, id2rel, rel2id, num_rels = load_data(train_path, dev_path, test_path, rel_dict_path)
+
+    # --- ALIGNEMENT DES ENTITÉS CHAR -> TOKEN ---
+    train_data = align_entities_with_tokens(train_data, tokenizer)
+    dev_data = align_entities_with_tokens(dev_data, tokenizer)
+    test_data = align_entities_with_tokens(test_data, tokenizer)
+
+    # Initialiser les modèles
     subject_model, object_model, hbt_model = E2EModel(bert_config_path, bert_checkpoint_path, LR, num_rels)
-    
+
     if args.train:
-        BATCH_SIZE = 2 # Reduced batch size for sample data
-        EPOCH = 5 # Reduced epochs for sample data
-        MAX_LEN = 128 # Adjusted max length
+        BATCH_SIZE = 2  # Ajuster selon ta mémoire GPU
+        EPOCH = 5  # Ajuster selon tes besoins
+        MAX_LEN = 128  # Ajuster si besoin
+
         STEPS = len(train_data) // BATCH_SIZE
         data_manager = data_generator(train_data, tokenizer, rel2id, num_rels, MAX_LEN, BATCH_SIZE)
+
         evaluator = Evaluate(subject_model, object_model, tokenizer, id2rel, dev_data, save_weights_path)
+
         hbt_model.fit_generator(data_manager.__iter__(),
-                              steps_per_epoch=STEPS,
-                              epochs=EPOCH,
-                              callbacks=[evaluator]
-                              )
+                                steps_per_epoch=STEPS,
+                                epochs=EPOCH,
+                                callbacks=[evaluator]
+                                )
     else:
         hbt_model.load_weights(save_weights_path)
         test_result_path = 'results/' + dataset + '/test_result.json'
+
         isExactMatch = True if dataset == 'Wiki-KBP' else False
+
         if isExactMatch:
             print("Exact Match")
         else:
             print("Partial Match")
-        precision, recall, f1_score = metric(subject_model, object_model, test_data, id2rel, tokenizer, isExactMatch, test_result_path)
+
+        precision, recall, f1_score = metric(subject_model, object_model, test_data, id2rel, tokenizer, isExactMatch,
+                                            test_result_path)
         print(f'{precision}\t{recall}\t{f1_score}')
-
-
