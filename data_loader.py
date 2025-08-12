@@ -2,19 +2,21 @@
 import numpy as np
 import re, os, json
 from random import choice
-from utils.align_entities_with_tokens import align_with_tokens
+from utils.align_entities_with_tokens import align_with_tokens  
 
 BERT_MAX_LEN = 512
 RANDOM_SEED = 2019
 
 def find_head_idx(source, target):
+    """Trouve l'indice de départ de la sous-liste target dans la liste source."""
     target_len = len(target)
-    for i in range(len(source)):
+    for i in range(len(source) - target_len + 1):
         if source[i: i + target_len] == target:
             return i
     return -1
 
 def to_tuple(sent):
+    """Convertit les triples en tuples."""
     triple_list = []
     for triple in sent['triple_list']:
         triple_list.append(tuple(triple))
@@ -41,11 +43,12 @@ def load_data(train_path, dev_path, test_path, rel_dict_path):
     np.random.shuffle(random_order)
     train_data = [train_data[i] for i in random_order]
 
-    for sent in train_data: 
+    # Conversion des triples en tuples
+    for sent in train_data:
         to_tuple(sent)
-    for sent in dev_data:  
+    for sent in dev_data:
         to_tuple(sent)
-    for sent in test_data: 
+    for sent in test_data:
         to_tuple(sent)
 
     print("train_data len:", len(train_data))
@@ -66,57 +69,82 @@ class data_generator:
         self.steps = len(self.data) // self.batch_size
         if len(self.data) % self.batch_size != 0:
             self.steps += 1
+
     def __len__(self):
         return self.steps
+
     def __iter__(self):
         while True:
             idxs = list(range(len(self.data)))
             np.random.seed(RANDOM_SEED)
             np.random.shuffle(idxs)
-            tokens_batch, segments_batch, sub_heads_batch, sub_tails_batch, sub_head_batch, sub_tail_batch, obj_heads_batch, obj_tails_batch = [], [], [], [], [], [], [], []
+
+            tokens_batch, segments_batch = [], []
+            sub_heads_batch, sub_tails_batch = [], []
+            sub_head_batch, sub_tail_batch = [], []
+            obj_heads_batch, obj_tails_batch = [], []
+
             for idx in idxs:
                 line = self.data[idx]
+                # On suppose que line['text'] est le texte brut
                 text = ' '.join(line['text'].split()[:self.maxlen])
+
                 tokens = self.tokenizer.tokenize(text)
                 if len(tokens) > BERT_MAX_LEN:
                     tokens = tokens[:BERT_MAX_LEN]
                 text_len = len(tokens)
 
+                # Ici on suppose que line['triple_list'] contient des triples avec spans tokenisés
                 s2ro_map = {}
                 for triple in line['triple_list']:
-                    triple = (self.tokenizer.tokenize(triple[0])[1:-1], triple[1], self.tokenizer.tokenize(triple[2])[1:-1])
-                    sub_head_idx = find_head_idx(tokens, triple[0])
-                    obj_head_idx = find_head_idx(tokens, triple[2])
+                    # triple = (subject_tokens, relation, object_tokens)
+                    subj_tokens = self.tokenizer.tokenize(triple[0])[1:-1]
+                    obj_tokens = self.tokenizer.tokenize(triple[2])[1:-1]
+
+                    sub_head_idx = find_head_idx(tokens, subj_tokens)
+                    obj_head_idx = find_head_idx(tokens, obj_tokens)
+
                     if sub_head_idx != -1 and obj_head_idx != -1:
-                        sub = (sub_head_idx, sub_head_idx + len(triple[0]) - 1)
-                        if sub not in s2ro_map:
-                            s2ro_map[sub] = []
-                        s2ro_map[sub].append((obj_head_idx,
-                                           obj_head_idx + len(triple[2]) - 1,
-                                           self.rel2id[triple[1]]))
+                        sub_span = (sub_head_idx, sub_head_idx + len(subj_tokens) - 1)
+                        if sub_span not in s2ro_map:
+                            s2ro_map[sub_span] = []
+                        s2ro_map[sub_span].append((
+                            obj_head_idx,
+                            obj_head_idx + len(obj_tokens) - 1,
+                            self.rel2id[triple[1]]
+                        ))
 
                 if s2ro_map:
                     token_ids, segment_ids = self.tokenizer.encode(first=text)
                     if len(token_ids) > text_len:
                         token_ids = token_ids[:text_len]
                         segment_ids = segment_ids[:text_len]
+
                     tokens_batch.append(token_ids)
                     segments_batch.append(segment_ids)
-                    sub_heads, sub_tails = np.zeros(text_len), np.zeros(text_len)
-                    for s in s2ro_map:
-                        sub_heads[s[0]] = 1     
-                        sub_tails[s[1]] = 1     
+
+                    sub_heads = np.zeros(text_len)
+                    sub_tails = np.zeros(text_len)
+                    for sub_span in s2ro_map:
+                        sub_heads[sub_span[0]] = 1
+                        sub_tails[sub_span[1]] = 1
+
                     sub_head, sub_tail = choice(list(s2ro_map.keys()))
-                    obj_heads, obj_tails = np.zeros((text_len, self.num_rels)), np.zeros((text_len, self.num_rels))
-                    for ro in s2ro_map.get((sub_head, sub_tail), []): 
-                        obj_heads[ro[0]][ro[2]] = 1
-                        obj_tails[ro[1]][ro[2]] = 1
+
+                    obj_heads = np.zeros((text_len, self.num_rels))
+                    obj_tails = np.zeros((text_len, self.num_rels))
+
+                    for obj_start, obj_end, rel_id in s2ro_map.get((sub_head, sub_tail), []):
+                        obj_heads[obj_start][rel_id] = 1
+                        obj_tails[obj_end][rel_id] = 1
+
                     sub_heads_batch.append(sub_heads)
                     sub_tails_batch.append(sub_tails)
                     sub_head_batch.append([sub_head])
                     sub_tail_batch.append([sub_tail])
                     obj_heads_batch.append(obj_heads)
                     obj_tails_batch.append(obj_tails)
+
                     if len(tokens_batch) == self.batch_size or idx == idxs[-1]:
                         tokens_batch = seq_padding(tokens_batch)
                         segments_batch = seq_padding(segments_batch)
@@ -124,7 +152,15 @@ class data_generator:
                         sub_tails_batch = seq_padding(sub_tails_batch)
                         obj_heads_batch = seq_padding(obj_heads_batch, np.zeros(self.num_rels))
                         obj_tails_batch = seq_padding(obj_tails_batch, np.zeros(self.num_rels))
-                        sub_head_batch, sub_tail_batch = np.array(sub_head_batch), np.array(sub_tail_batch)
-                        yield [tokens_batch, segments_batch, sub_heads_batch, sub_tails_batch, sub_head_batch, sub_tail_batch, obj_heads_batch, obj_tails_batch], None
-                        tokens_batch, segments_batch, sub_heads_batch, sub_tails_batch, sub_head_batch, sub_tail_batch, obj_heads_batch, obj_tails_batch, = [], [], [], [], [], [], [], []
+                        sub_head_batch = np.array(sub_head_batch)
+                        sub_tail_batch = np.array(sub_tail_batch)
 
+                        yield [tokens_batch, segments_batch,
+                               sub_heads_batch, sub_tails_batch,
+                               sub_head_batch, sub_tail_batch,
+                               obj_heads_batch, obj_tails_batch], None
+
+                        tokens_batch, segments_batch = [], []
+                        sub_heads_batch, sub_tails_batch = [], []
+                        sub_head_batch, sub_tail_batch = [], []
+                        obj_heads_batch, obj_tails_batch = [], []
