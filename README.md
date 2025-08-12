@@ -21,17 +21,15 @@ Projet d'extraction de relations à partir de textes basé sur un modèle BERT e
 - NumPy
 - Autres librairies : argparse, etc.
 
-Installe les dépendances avec (si tu as un `requirements.txt`) :
+Installe les dépendances avec (un `requirements.txt`) :
 
 
 pip install -r requirements.txt
 Préparation des données
 Les datasets doivent être placés dans :
 
-kotlin
-Copier
-Modifier
-data/<dataset>/
+
+data/<dataset>/ ces fichiers sont meme dans le repo tplinker
 avec les fichiers suivants :
 
 train_triples.json (données d'entraînement)
